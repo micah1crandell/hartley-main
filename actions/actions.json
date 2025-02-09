@@ -1,0 +1,21 @@
+[
+    {
+      "name": "run_terminal_command",
+      "description": "Executes a terminal command",
+      "script": "python/action_runner.py",
+      "function": "run_terminal_command"
+    },
+    {
+      "name": "create_website",
+      "description": "Creates a website using only HTML and JS",
+      "script": "python/action_runner.py",
+      "function": "create_website"
+    },
+    {
+      "name": "turn_on_lights",
+      "description": "Turns on the living room lights",
+      "script": "python/action_runner.py",
+      "function": "turn_on_lights"
+    }
+  ]
+  
