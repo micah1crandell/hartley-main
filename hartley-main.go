@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	// a pure-Go SQLite driver.
+	_ "modernc.org/sqlite"
 )
 
 // ----------------------
@@ -93,8 +96,8 @@ func main() {
 		log.Fatalf("Error parsing actions: %v", err)
 	}
 
-	// Initialize SQLite database.
-	dbConn, err = sql.Open("sqlite3", "./db/hartley.db")
+	// Initialize SQLite database using the modernc.org/sqlite driver.
+	dbConn, err = sql.Open("sqlite", "./db/hartley.db")
 	if err != nil {
 		log.Fatalf("Error opening database: %v", err)
 	}
@@ -125,9 +128,27 @@ func main() {
 }
 
 // ----------------------
-// HTTP Handler
+// Utility Functions
 // ----------------------
 
+// runPython attempts to run the Python script using "python3" first.
+// If that fails, it falls back to "python", and then "py" (the Windows launcher).
+func runPython(args ...string) ([]byte, error) {
+	// Try python3 first.
+	out, err := exec.Command("python3", args...).CombinedOutput()
+	if err != nil && (errors.Is(err, exec.ErrNotFound) || strings.Contains(string(out), "Python was not found")) {
+		log.Printf("python3 not found, falling back to python")
+		out, err = exec.Command("python", args...).CombinedOutput()
+		// If python still isn't found, try the Windows launcher.
+		if err != nil && (errors.Is(err, exec.ErrNotFound) || strings.Contains(string(out), "Python was not found")) {
+			log.Printf("python not found, falling back to py")
+			out, err = exec.Command("py", args...).CombinedOutput()
+		}
+	}
+	return out, err
+}
+
+// actionHandler processes incoming action requests.
 func actionHandler(w http.ResponseWriter, r *http.Request) {
 	// Ensure only POST requests are accepted.
 	if r.Method != http.MethodPost {
@@ -157,9 +178,8 @@ func actionHandler(w http.ResponseWriter, r *http.Request) {
 				resp = map[string]interface{}{"error": "Error marshalling parameters"}
 				break
 			}
-			// Execute the defined Python script.
-			cmd := exec.Command("python3", act.Script, act.Function, string(paramsJSON))
-			output, err := cmd.CombinedOutput()
+			// Execute the defined Python script using fallback for python3/python/py.
+			output, err := runPython(act.Script, act.Function, string(paramsJSON))
 			if err != nil {
 				resp = map[string]interface{}{
 					"error":  fmt.Sprintf("Error executing action: %v", err),
@@ -230,31 +250,34 @@ func actionHandler(w http.ResponseWriter, r *http.Request) {
 							// Write the generated code to a temporary file.
 							tmpFile, err := ioutil.TempFile("", "hartley_generated_*.py")
 							if err != nil {
-								resp = map[string]interface{}{"error": "Error creating temporary file for generated code"}
+								log.Printf("Error creating temporary file for generated code: %v", err)
+								// Return the initial Gemini response.
+								resp = geminiRespToMap(geminiResp)
 							} else {
 								defer os.Remove(tmpFile.Name())
 								_, err = tmpFile.Write([]byte(generatedCode))
 								tmpFile.Close()
 								if err != nil {
-									resp = map[string]interface{}{"error": "Error writing generated code to temporary file"}
+									log.Printf("Error writing generated code to temporary file: %v", err)
+									resp = geminiRespToMap(geminiResp)
 								} else {
-									// Execute the temporary Python file.
-									cmd := exec.Command("python3", tmpFile.Name())
-									pythonOutput, err := cmd.CombinedOutput()
+									// Execute the temporary Python file using our runPython fallback.
+									pythonOutput, err := runPython(tmpFile.Name())
 									// Log the console output from the Python execution.
 									log.Printf("Python execution output: %s", string(pythonOutput))
 									if err != nil {
-										resp = map[string]interface{}{
-											"error":  fmt.Sprintf("Error executing generated code: %v", err),
-											"output": string(pythonOutput),
-										}
+										log.Printf("Error executing generated code: %v", err)
+										// Return the initial Gemini response.
+										resp = geminiRespToMap(geminiResp)
 									} else {
 										// Attempt to parse the output as JSON.
-										if err = json.Unmarshal(pythonOutput, &resp); err != nil {
-											resp = map[string]interface{}{
-												"error":      "Error parsing output from generated code",
-												"raw_output": string(pythonOutput),
-											}
+										var parsedResp map[string]interface{}
+										if err = json.Unmarshal(pythonOutput, &parsedResp); err != nil {
+											log.Printf("Error parsing output from generated code: %v", err)
+											resp = geminiRespToMap(geminiResp)
+										} else {
+											// Use the parsed Python output if successful.
+											resp = parsedResp
 										}
 									}
 								}
@@ -269,6 +292,20 @@ func actionHandler(w http.ResponseWriter, r *http.Request) {
 	// Log both the request and response.
 	logToDB(req.Action, req, resp)
 	jsonResponse(w, resp)
+}
+
+// geminiRespToMap converts a GeminiResponse to a map[string]interface{} for returning to the client.
+func geminiRespToMap(geminiResp GeminiResponse) map[string]interface{} {
+	// Marshal and unmarshal to convert to a generic map.
+	data, err := json.Marshal(geminiResp)
+	if err != nil {
+		return map[string]interface{}{"error": "Error converting Gemini response"}
+	}
+	var result map[string]interface{}
+	if err = json.Unmarshal(data, &result); err != nil {
+		return map[string]interface{}{"error": "Error converting Gemini response"}
+	}
+	return result
 }
 
 // ----------------------

@@ -50,7 +50,7 @@ cd hartley
 ```
 
 ### 3. Set Up Configuration
-Edit `config/config.json` to include your Google Gemini API key and configure the server port:
+Create `config/config.json` to include your Google Gemini API key and configure the server port:
 ```json
 {
   "server_port": 8080,
