@@ -454,8 +454,8 @@ func geminiRespToMap(geminiResp GeminiResponse) map[string]interface{} {
 }
 
 // extractValidJSON attempts to extract a valid JSON object from the given output.
-// It first tries to unmarshal the complete output, then scans line-by-line (from bottom up)
-// for the first valid JSON object.
+// It first tries to unmarshal the complete output, then scans line-by-line from bottom to top,
+// only attempting lines that start with "{" and end with "}".
 func extractValidJSON(output []byte) (map[string]interface{}, error) {
 	var result map[string]interface{}
 	if err := json.Unmarshal(output, &result); err == nil {
@@ -467,8 +467,11 @@ func extractValidJSON(output []byte) (map[string]interface{}, error) {
 		if line == "" {
 			continue
 		}
-		if err := json.Unmarshal([]byte(line), &result); err == nil {
-			return result, nil
+		// Only try lines that look like JSON.
+		if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
+			if err := json.Unmarshal([]byte(line), &result); err == nil {
+				return result, nil
+			}
 		}
 	}
 	return nil, errors.New("no valid JSON found in output")
