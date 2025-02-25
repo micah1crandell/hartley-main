@@ -186,10 +186,24 @@ func actionHandler(w http.ResponseWriter, r *http.Request) {
 					"output": string(output),
 				}
 			} else {
-				if err = json.Unmarshal(output, &resp); err != nil {
+				// Attempt to parse the output as JSON by locating the valid JSON substring.
+				var parsedResp map[string]interface{}
+				outputStr := string(output)
+				jsonStartIndex := strings.Index(outputStr, `{"result"`)
+				if jsonStartIndex == -1 {
+					log.Printf("Error: valid JSON not found in output: %s", outputStr)
 					resp = map[string]interface{}{
-						"error":      "Error parsing action output",
-						"raw_output": string(output),
+						"error": "Valid JSON not found in output",
+					}
+				} else {
+					jsonStr := outputStr[jsonStartIndex:]
+					if err = json.Unmarshal([]byte(jsonStr), &parsedResp); err != nil {
+						log.Printf("Error parsing extracted JSON: %v", err)
+						resp = map[string]interface{}{
+							"error": "Error parsing extracted JSON",
+						}
+					} else {
+						resp = parsedResp
 					}
 				}
 			}
@@ -270,14 +284,21 @@ func actionHandler(w http.ResponseWriter, r *http.Request) {
 										// Return the initial Gemini response.
 										resp = geminiRespToMap(geminiResp)
 									} else {
-										// Attempt to parse the output as JSON.
+										// Attempt to parse the output as JSON by locating the valid JSON substring.
 										var parsedResp map[string]interface{}
-										if err = json.Unmarshal(pythonOutput, &parsedResp); err != nil {
-											log.Printf("Error parsing output from generated code: %v", err)
+										outputStr := string(pythonOutput)
+										jsonStartIndex := strings.Index(outputStr, `{"result"`)
+										if jsonStartIndex == -1 {
+											log.Printf("Error: valid JSON not found in output: %s", outputStr)
 											resp = geminiRespToMap(geminiResp)
 										} else {
-											// Use the parsed Python output if successful.
-											resp = parsedResp
+											jsonStr := outputStr[jsonStartIndex:]
+											if err = json.Unmarshal([]byte(jsonStr), &parsedResp); err != nil {
+												log.Printf("Error parsing extracted JSON: %v", err)
+												resp = geminiRespToMap(geminiResp)
+											} else {
+												resp = parsedResp
+											}
 										}
 									}
 								}
