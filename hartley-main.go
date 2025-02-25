@@ -308,7 +308,12 @@ func handlePythonCommand(payload string) map[string]interface{} {
 	var parsedResp map[string]interface{}
 	if err = json.Unmarshal(pythonOutput, &parsedResp); err != nil {
 		log.Printf("Error parsing output from generated code: %v", err)
-		return geminiRespToMap(geminiResp)
+		// Attempt to extract a valid JSON object from the output.
+		parsedResp, err = extractValidJSON(pythonOutput)
+		if err != nil {
+			log.Printf("Error extracting valid JSON: %v", err)
+			return geminiRespToMap(geminiResp)
+		}
 	}
 
 	return parsedResp
@@ -336,9 +341,13 @@ func handleShellCommand(payload string) map[string]interface{} {
 
 	var resp map[string]interface{}
 	if err = json.Unmarshal(output, &resp); err != nil {
-		return map[string]interface{}{
-			"error":      "Error parsing shell command output",
-			"raw_output": string(output),
+		// Attempt to extract valid JSON from output.
+		resp, err = extractValidJSON(output)
+		if err != nil {
+			return map[string]interface{}{
+				"error":      "Error parsing shell command output",
+				"raw_output": string(output),
+			}
 		}
 	}
 
@@ -420,7 +429,11 @@ func handleConversational(query string) map[string]interface{} {
 	var parsedResp map[string]interface{}
 	if err = json.Unmarshal(pythonOutput, &parsedResp); err != nil {
 		log.Printf("Error parsing output from generated code: %v", err)
-		return geminiRespToMap(geminiResp)
+		parsedResp, err = extractValidJSON(pythonOutput)
+		if err != nil {
+			log.Printf("Error extracting valid JSON: %v", err)
+			return geminiRespToMap(geminiResp)
+		}
 	}
 
 	return parsedResp
@@ -438,6 +451,27 @@ func geminiRespToMap(geminiResp GeminiResponse) map[string]interface{} {
 		return map[string]interface{}{"error": "Error converting Gemini response"}
 	}
 	return result
+}
+
+// extractValidJSON attempts to extract a valid JSON object from the given output.
+// It first tries to unmarshal the complete output, then scans line-by-line (from bottom up)
+// for the first valid JSON object.
+func extractValidJSON(output []byte) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	if err := json.Unmarshal(output, &result); err == nil {
+		return result, nil
+	}
+	lines := strings.Split(string(output), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(line), &result); err == nil {
+			return result, nil
+		}
+	}
+	return nil, errors.New("no valid JSON found in output")
 }
 
 // jsonResponse sends a JSON response.
