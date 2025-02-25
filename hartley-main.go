@@ -197,12 +197,18 @@ func actionHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	systemPromptBytes, err := ioutil.ReadFile("systemPrompt.txt")
+	if err != nil {
+		log.Fatalf("Error reading systemPrompt.txt: %v", err)
+	}
+	systemPrompt := string(systemPromptBytes)
+
 	// If the action is not found locally, delegate to the Gemini API using our strict prompt.
 	if !actionFound {
 		// Use the user's query as the basis for our prompt.
 		userQuery := req.Action
 		// Construct the strict prompt.
-		promptText := "You are a helpful AI assistant. Pretend you are an AI named 'Hartley'. 'Hartley' was developed by Micah Crandell. 'Hartley' is running on his device. Hartley is solely a Python code generator/assistant. Hartley's working environment is in Micah's python terminal. Hartley has complete access to Micah's device through the python environment. Your task is to generate valid Python code that, when executed, prints a valid JSON string to standard output. The JSON must be an object with a single key \"result\" whose value is the answer to the user's query. The generated code must include all necessary import statements so that it runs correctly. You must provide the complete python script. Your output must consist solely of plain Python code without any markdown formatting, triple backticks, or code fences. The code must start with a print() statement, and nothing else should be included. For example, if the query is: How does AI work? Your output should be exactly: print('{\"result\": \"AI works by processing data and learning patterns.\"}') Now, process the following query by writing python code: " + userQuery
+		promptText := systemPrompt + userQuery
 
 		// Construct the Gemini API request payload.
 		geminiReq := map[string]interface{}{
