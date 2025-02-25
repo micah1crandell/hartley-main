@@ -2,6 +2,9 @@
 import sys
 import json
 import subprocess
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 def run_terminal_command(params):
     # Expects a "command" field in params.
