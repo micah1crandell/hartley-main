@@ -197,7 +197,7 @@ func actionHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	systemPromptBytes, err := ioutil.ReadFile("systemPrompt.txt")
+	systemPromptBytes, err := ioutil.ReadFile("config/systemPrompt.txt")
 	if err != nil {
 		log.Fatalf("Error reading systemPrompt.txt: %v", err)
 	}
